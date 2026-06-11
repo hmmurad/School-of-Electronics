@@ -1,0 +1,8 @@
+{
+  "name": "QuizMe",
+  "description": "Master any subject with interactive lessons and custom exams",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

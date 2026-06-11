@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    function isAdmin() { 
+      // Safe check against user profile
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; 
+    }
+
+    function isValidUser(data, id) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 6 &&
+             data.uid is string && data.uid == id &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 200 &&
+             data.role in ['student', 'admin'] &&
+             data.createdAt is number &&
+             data.updatedAt is number;
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['text', 'options', 'correctOptionIndex']) &&
+             data.keys().size() >= 3 && data.keys().size() <= 4 &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+             data.options is list && data.options.size() > 0 && data.options.size() <= 10 &&
+             data.options[0] is string &&
+             data.correctOptionIndex is number &&
+             (!('category' in data.keys()) || (data.category is string && data.category.size() <= 200));
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+                       isValidId(userId) && isValidUser(incoming(), userId) &&
+                       incoming().role == 'student'; // Self-created accounts must be students
+      
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) &&
+                       isValidUser(incoming(), userId) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt && 
+                       (incoming().role == existing().role || isAdmin());
+      
+      allow delete: if isAdmin();
+    }
+
+    match /stc_mcq_questions/{questionId} {
+      allow read: if isSignedIn(); // All authenticated users can read questions
+      
+      allow create: if isAdmin() && isValidId(questionId) && isValidQuestion(incoming());
+      allow update: if isAdmin() && isValidQuestion(incoming());
+      allow delete: if isAdmin();
+    }
+  }
+}
